@@ -1,0 +1,174 @@
+
+
+import UIKit
+class DashboardViewController: UIViewController {
+    // MARK: - Outlets
+
+    @IBOutlet weak var favoritesCollectionView: UICollectionView!
+
+    // MARK: - Properties
+
+    var searchController: UISearchController = UISearchController()
+    var resultsTableViewController: SearchResultTableViewController = SearchResultTableViewController()
+    var restoredState = SearchControllerRestorableState()
+    var favorites: [iTunesSearchResult] = []
+    var selectedItem: iTunesSearchResult? = nil
+
+    var searchScopes: [iTunesSearchRequest.SearchMedia] = [
+        iTunesSearchRequest.SearchMedia.all,
+        iTunesSearchRequest.SearchMedia.music,
+        iTunesSearchRequest.SearchMedia.movie,
+        iTunesSearchRequest.SearchMedia.tvShow,
+        iTunesSearchRequest.SearchMedia.podcast,
+    ]
+    var selectedScopeIndex: Int = 0
+
+    // MARK: - Lifecycle
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+
+        setupViews()
+
+        FavoriteManager.loadFavorites { [weak self] (results) in
+            guard let self = self,
+                let items = results else {
+                return
+            }
+
+            DispatchQueue.main.async {
+                self.favorites = items
+                self.favoritesCollectionView.reloadData()
+            }
+        }
+    }
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        
+        // Restore the searchController's active state.
+        if restoredState.wasActive {
+            searchController.isActive = restoredState.wasActive
+            restoredState.wasActive = false
+
+            if restoredState.wasFirstResponder {
+                searchController.searchBar.becomeFirstResponder()
+                restoredState.wasFirstResponder = false
+            }
+        }
+    }
+
+    func setupViews() {
+        configureLargeTitles()
+        configureSearchController()
+
+        configureFavoritesCollectionView()
+    }
+
+    func configureSearchController() {
+        guard let catalogResultsVC = storyboard?.instantiateViewController(identifier: SearchResultTableViewController.storyboardID) as? SearchResultTableViewController else {
+            fatalError("Could not create table view controller")
+        }
+
+        resultsTableViewController = catalogResultsVC
+        searchController = UISearchController(searchResultsController: resultsTableViewController)
+        searchController.delegate = self
+        searchController.searchResultsUpdater = self
+        searchController.searchBar.backgroundImage = UIImage()
+        searchController.searchBar.delegate = self
+        searchController.searchBar.scopeButtonTitles = searchScopes.compactMap({ $0.title })
+
+        navigationItem.searchController = searchController
+        navigationItem.hidesSearchBarWhenScrolling = true
+
+        definesPresentationContext = true
+    }
+
+    override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
+        if segue.identifier == "showDetailSegue" {
+            guard let detailViewController = segue.destination as? DetailViewController else {
+                return
+            }
+
+            detailViewController.result = selectedItem
+        }
+    }
+}
+extension DashboardViewController {
+    
+    func configureLargeTitles() {
+        navigationController?.navigationBar.prefersLargeTitles = true
+    }
+    
+    func configureFavoritesCollectionView() {
+        let flowLayout = UICollectionViewFlowLayout()
+        flowLayout.minimumInteritemSpacing = 0
+        favoritesCollectionView.collectionViewLayout = flowLayout
+        
+        favoritesCollectionView.delegate = self
+        favoritesCollectionView.dataSource = self
+        
+        let favoriteCellNib = UINib(nibName: "FavoriteCollectionViewCell", bundle: nil)
+        favoritesCollectionView.register(favoriteCellNib, forCellWithReuseIdentifier: FavoriteCollectionViewCell.cellId)
+    }
+}
+
+extension DashboardViewController: UISearchBarDelegate {
+    func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
+        searchBar.resignFirstResponder()
+    }
+
+    func searchBar(_ searchBar: UISearchBar, selectedScopeButtonIndexDidChange selectedScope: Int) {
+        selectedScopeIndex = selectedScope
+    }
+}
+
+// MARK: - UISearchControllerDelegate
+
+extension DashboardViewController: UISearchControllerDelegate {
+    func willDismissSearchController(_ searchController: UISearchController) {
+        FavoriteManager.loadFavorites { [weak self] (results) in
+            guard let self = self,
+                let items = results else {
+                return
+            }
+
+            DispatchQueue.main.async {
+                self.favorites = items
+                self.favoritesCollectionView.reloadData()
+            }
+        }
+    }
+}
+
+// MARK: - Favorites Collection View Delegate
+
+extension DashboardViewController: UICollectionViewDelegate {
+    func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+        self.selectedItem = favorites[indexPath.row]
+
+        performSegue(withIdentifier: "showDetailSegue", sender: self)
+    }
+}
+
+// MARK: - Favorites Collection View DataSource
+extension DashboardViewController: UICollectionViewDataSource {
+    func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
+        return favorites.count
+    }
+
+    func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
+        guard let cell = collectionView.dequeueReusableCell(withReuseIdentifier: FavoriteCollectionViewCell.cellId, for: indexPath) as? FavoriteCollectionViewCell else {
+            return UICollectionViewCell()
+        }
+
+        cell.configure(favorites[indexPath.row])
+        
+        return cell
+    }
+}
+
+extension DashboardViewController: UICollectionViewDelegateFlowLayout {
+    func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, sizeForItemAt indexPath: IndexPath) -> CGSize {
+        return CGSize(width: view.frame.width / 2, height: 175)
+    }
+}

@@ -1,0 +1,38 @@
+
+
+
+import UIKit
+
+
+class FavoriteCollectionViewCell: UICollectionViewCell {
+    public static var cellId = "cellId"
+
+    @IBOutlet weak var itemImageView: UIImageView?
+    @IBOutlet weak var itemNameLabel: UILabel?
+    
+    override func awakeFromNib() {
+        super.awakeFromNib()
+        // Initialization code
+        backgroundColor = .clear
+    }
+
+    func configure(_ favoriteItem: iTunesSearchResult) {
+        DispatchQueue.main.async {
+            self.itemNameLabel?.text = favoriteItem.name
+            
+            DispatchQueue.global().async {
+                guard
+                    let urlString = favoriteItem.artwork,
+                    let imageUrl = URL(string: urlString),
+                    let imageData = try? Data(contentsOf: imageUrl) else {
+                        return
+                }
+
+                DispatchQueue.main.async { [weak self] in
+                    self?.itemImageView?.image = UIImage(data: imageData)
+                }
+            }
+        }
+    }
+
+}
